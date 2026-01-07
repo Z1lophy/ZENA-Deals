@@ -13,10 +13,18 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Stripe configuration
-// IMPORTANT: Secret key should NEVER be exposed to frontend
-const STRIPE_SECRET_KEY = 'sk_test_51Sn3O4GRdegJOpfLDhtndFMBg9e9T5ghw5lfXYMWND7URUyVZ5MVcfqqWuaJcKVqPnyMD6aVc0qbiqIeZJbqv1xW00W2tTdI1o';
-const STRIPE_PUBLISHABLE_KEY = 'pk_test_51Sn3O4GRdegJOpfLIthHZpWjG0NEPpRipyVNkgkZPvDtcxiS42Tpbw44DySCoE77EHpodHFlYFggKcyc5n1owAXS00QPLspmVn';
-const stripeClient = stripe(STRIPE_SECRET_KEY);
+// IMPORTANT: Keys MUST be set as environment variables, never hardcoded
+// Get from: https://dashboard.stripe.com/apikeys
+// For local dev: Create a .env file with your keys (see ENV_SETUP.md)
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
+const STRIPE_PUBLISHABLE_KEY = process.env.STRIPE_PUBLISHABLE_KEY;
+
+if (!STRIPE_SECRET_KEY || !STRIPE_PUBLISHABLE_KEY) {
+    console.warn('⚠️  WARNING: Stripe keys not found in environment variables!');
+    console.warn('⚠️  Create a .env file or set environment variables (see ENV_SETUP.md)');
+}
+
+const stripeClient = STRIPE_SECRET_KEY ? stripe(STRIPE_SECRET_KEY) : null;
 
 // Enable CORS for all routes
 app.use(cors());
@@ -252,7 +260,12 @@ app.get('/api/search', async (req, res) => {
         return res.status(400).json({ error: 'Missing query parameter' });
     }
 
-    const SERPAPI_KEY = '8f0dbd9504d4b13eab4f0c7d688c6483fee216e26bf4646ae8942cb9b30c6633';
+    // Get SerpAPI key from environment variable
+    const SERPAPI_KEY = process.env.SERPAPI_KEY;
+    
+    if (!SERPAPI_KEY) {
+        return res.status(500).json({ error: 'SERPAPI_KEY environment variable is required. See ENV_SETUP.md for setup instructions.' });
+    }
     
     console.log('🛒 Searching retailers directly (no Google Shopping)...');
     console.log('📦 Searching:', retailers.map(r => r.name).join(', '));
@@ -351,6 +364,10 @@ app.post('/api/create-checkout-session', async (req, res) => {
 
 // Verify subscription endpoint
 app.post('/api/verify-subscription', async (req, res) => {
+    if (!stripeClient) {
+        return res.status(500).json({ error: 'Stripe is not configured. Please set STRIPE_SECRET_KEY environment variable.' });
+    }
+    
     try {
         const { sessionId } = req.body;
         

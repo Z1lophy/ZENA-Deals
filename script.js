@@ -9,7 +9,7 @@ const API_CONFIG = {
     // Get your free API key at: https://serpapi.com/users/sign_up
     // Then paste it below and set useSerpAPI to true
     useSerpAPI: true,
-    serpApiKey: '8f0dbd9504d4b13eab4f0c7d688c6483fee216e26bf4646ae8942cb9b30c6633', // Replace with your actual key from https://serpapi.com
+    serpApiKey: 'YOUR_SERPAPI_KEY', // Get your key from https://serpapi.com and set it in .env file as SERPAPI_KEY
     
     // Option 2: Google Custom Search (100 free queries/day)
     useGoogleSearch: false,
