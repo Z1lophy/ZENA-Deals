@@ -250,35 +250,9 @@ async function searchRetailer(retailer, query, apiKey, shoppingMap = null) {
                         }
                     }
                     
-                    // Price validation - only filter out obviously wrong prices
-                    // Trust structured prices from Google (result.price, rich_snippet) more than snippet-extracted prices
-                    const priceFromSnippet = !result.price && !result.rich_snippet?.top?.detected_extensions?.price;
-                    
-                    if (price && priceValue !== null) {
-                        // Only validate prices extracted from snippets (less reliable)
-                        if (priceFromSnippet) {
-                            // For expensive items like GPUs, filter out very low prices from snippets
-                            const isExpensiveItem = query.toLowerCase().includes('gpu') ||
-                                                  query.toLowerCase().includes('graphics') ||
-                                                  query.toLowerCase().includes('rtx') ||
-                                                  query.toLowerCase().includes('5080') ||
-                                                  query.toLowerCase().includes('5090') ||
-                                                  query.toLowerCase().includes('4070') ||
-                                                  query.toLowerCase().includes('4080');
-                            
-                            // Only filter if price is suspiciously low for expensive items
-                            if (isExpensiveItem && priceValue < 200) {
-                                price = 'Check website';
-                                priceValue = null;
-                            } else if (!isExpensiveItem && priceValue < 1) {
-                                // For other items, only filter out prices under $1 (obviously wrong)
-                                price = 'Check website';
-                                priceValue = null;
-                            }
-                        }
-                        // Structured prices from Google are trusted - show them as-is
-                    } else if (!price) {
-                        // No price found at all
+                    // No price validation - show whatever price we get from the API
+                    // If no price found, show "Check website"
+                    if (!price) {
                         price = 'Check website';
                         priceValue = null;
                     }
