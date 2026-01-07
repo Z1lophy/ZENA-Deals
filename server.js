@@ -171,23 +171,23 @@ function isProductPage(url, retailerSite) {
 
 async function searchRetailer(retailer, query, apiKey) {
     try {
-        // Try Google Shopping first (better product data and images)
-        // Then fall back to regular Google Search if needed
+        const results = [];
+        
+        // Strategy: Use Google Shopping API (no site filter - it doesn't work well)
+        // Then filter results by retailer domain and extract direct product links
+        const shoppingQuery = query; // Don't use site: filter with Google Shopping
+        const shoppingUrl = `https://serpapi.com/search.json?engine=google_shopping&q=${encodeURIComponent(shoppingQuery)}&api_key=${apiKey}&num=20`;
+        
         let data = null;
-        
-        // First try: Google Shopping with site filter
-        const shoppingQuery = `${query} site:${retailer.site}`;
-        const shoppingUrl = `https://serpapi.com/search.json?engine=google_shopping&q=${encodeURIComponent(shoppingQuery)}&api_key=${apiKey}&num=10`;
-        
         try {
             data = await makeRequest(shoppingUrl);
-            // If shopping results are empty or error, fall back to regular search
-            if (data.error || !data.shopping_results || data.shopping_results.length === 0) {
-                throw new Error('No shopping results, trying regular search');
+            if (data.error) {
+                throw new Error(data.error);
             }
             console.log(`  📦 Using Google Shopping for ${retailer.name}`);
         } catch (shoppingError) {
-            // Fall back to regular Google Search
+            console.log(`  ⚠️ Google Shopping failed for ${retailer.name}, trying regular search`);
+            // Fall back to regular Google Search with site filter
             const searchQuery = `${query} site:${retailer.site}`;
             const searchUrl = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(searchQuery)}&api_key=${apiKey}&num=15`;
             data = await makeRequest(searchUrl);
@@ -199,37 +199,59 @@ async function searchRetailer(retailer, query, apiKey) {
             return [];
         }
         
-        const results = [];
-        
-        // Handle Google Shopping results (better product data)
+        // Handle Google Shopping results (better product data and images)
         if (data.shopping_results && data.shopping_results.length > 0) {
             for (const result of data.shopping_results) {
-                // Check if result is from the retailer's domain
-                const productLink = result.link || result.product_link || result.product_url;
-                if (productLink && productLink.includes(retailer.site)) {
-                    // Use improved product page detection
-                    if (!isProductPage(productLink, retailer.site)) {
+                // Google Shopping provides direct product links in product_link field
+                // This is the ACTUAL retailer product page URL, not a Google redirect
+                const directProductLink = result.product_link || result.link;
+                
+                // Check if this result is from the retailer we're looking for
+                if (directProductLink && directProductLink.includes(retailer.site)) {
+                    // Verify it's a product page (not a search page)
+                    if (!isProductPage(directProductLink, retailer.site)) {
                         continue; // Skip non-product pages
                     }
                     
-                    // Google Shopping provides better structured data
-                    let price = result.price || result.extracted_price ? `$${result.extracted_price || result.price}` : 'Check website';
-                    let priceValue = result.extracted_price ? parseFloat(result.extracted_price) : null;
+                    // Google Shopping provides excellent structured data
+                    let price = 'Check website';
+                    let priceValue = null;
                     
-                    // Get image from Google Shopping (usually better quality)
+                    if (result.extracted_price) {
+                        priceValue = parseFloat(result.extracted_price);
+                        price = `$${priceValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                    } else if (result.price) {
+                        // Extract numeric value from price string
+                        const numMatch = result.price.toString().match(/[\d,]+\.?\d*/);
+                        if (numMatch) {
+                            priceValue = parseFloat(numMatch[0].replace(/,/g, ''));
+                            price = `$${priceValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                        } else {
+                            price = result.price;
+                        }
+                    }
+                    
+                    // Get image from Google Shopping (high quality product images)
+                    // Google Shopping always has images in these fields
                     let image = result.thumbnail || 
                                result.image ||
                                result.original_image ||
                                '';
                     
+                    // If still no image, check other possible fields
+                    if (!image && result.serpapi_shopping_url) {
+                        // Sometimes image is in the shopping URL metadata
+                        image = result.thumbnail || '';
+                    }
+                    
                     results.push({
                         title: result.title || 'Product',
-                        link: productLink, // Direct product link from Google Shopping
+                        link: directProductLink, // This is the DIRECT retailer product link!
                         snippet: result.snippet || '',
                         source: retailer.name,
                         price: price,
                         thumbnail: image,
-                        image: image
+                        image: image // Include both for compatibility
                     });
                 }
             }
