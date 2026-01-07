@@ -205,60 +205,6 @@ async function searchRetailer(retailer, query, apiKey) {
                         continue; // Skip non-product pages
                     }
                     
-                    // Google Shopping provides excellent structured data
-                    let price = 'Check website';
-                    let priceValue = null;
-                    
-                    if (result.extracted_price) {
-                        priceValue = parseFloat(result.extracted_price);
-                        price = `$${priceValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-                    } else if (result.price) {
-                        // Extract numeric value from price string
-                        const numMatch = result.price.toString().match(/[\d,]+\.?\d*/);
-                        if (numMatch) {
-                            priceValue = parseFloat(numMatch[0].replace(/,/g, ''));
-                            price = `$${priceValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-                        } else {
-                            price = result.price;
-                        }
-                    }
-                    
-                    // Get image from Google Shopping (high quality product images)
-                    // Google Shopping always has images in these fields
-                    let image = result.thumbnail || 
-                               result.image ||
-                               result.original_image ||
-                               '';
-                    
-                    // If still no image, check other possible fields
-                    if (!image && result.serpapi_shopping_url) {
-                        // Sometimes image is in the shopping URL metadata
-                        image = result.thumbnail || '';
-                    }
-                    
-                    results.push({
-                        title: result.title || 'Product',
-                        link: directProductLink, // This is the DIRECT retailer product link!
-                        snippet: result.snippet || '',
-                        source: retailer.name,
-                        price: price,
-                        thumbnail: image,
-                        image: image // Include both for compatibility
-                    });
-                }
-            }
-        }
-        
-        // Also check organic_results (from regular Google Search or as fallback)
-        if (data.organic_results) {
-            for (const result of data.organic_results) {
-                // Only include results from the retailer's domain
-                if (result.link && result.link.includes(retailer.site)) {
-                    // Use improved product page detection
-                    if (!isProductPage(result.link, retailer.site)) {
-                        continue; // Skip non-product pages
-                    }
-                    
                     // Try to extract price from multiple sources
                     // Google Search prices are often unreliable, so we'll be more careful
                     let price = null;
