@@ -250,24 +250,35 @@ async function searchRetailer(retailer, query, apiKey, shoppingMap = null) {
                         }
                     }
                     
-                    // Google Search prices are VERY unreliable - be extremely conservative
-                    // For expensive items like GPUs, any price under $200 is almost certainly wrong
-                    // For other items, prices under $50 are suspicious
-                    const isExpensiveItem = query.toLowerCase().includes('gpu') ||
-                                          query.toLowerCase().includes('graphics') ||
-                                          query.toLowerCase().includes('rtx') ||
-                                          query.toLowerCase().includes('5080') ||
-                                          query.toLowerCase().includes('5090') ||
-                                          query.toLowerCase().includes('4070') ||
-                                          query.toLowerCase().includes('4080') ||
-                                          query.toLowerCase().includes('laptop') ||
-                                          query.toLowerCase().includes('computer');
+                    // Price validation - only filter out obviously wrong prices
+                    // Trust structured prices from Google (result.price, rich_snippet) more than snippet-extracted prices
+                    const priceFromSnippet = !result.price && !result.rich_snippet?.top?.detected_extensions?.price;
                     
-                    const minPriceThreshold = isExpensiveItem ? 200 : 50;
-                    
-                    // If price seems too low or we don't have one, mark as "Check website"
-                    // It's MUCH better to show "Check website" than wrong prices like $83 for a $999 product
-                    if (!price || (priceValue && priceValue < minPriceThreshold)) {
+                    if (price && priceValue !== null) {
+                        // Only validate prices extracted from snippets (less reliable)
+                        if (priceFromSnippet) {
+                            // For expensive items like GPUs, filter out very low prices from snippets
+                            const isExpensiveItem = query.toLowerCase().includes('gpu') ||
+                                                  query.toLowerCase().includes('graphics') ||
+                                                  query.toLowerCase().includes('rtx') ||
+                                                  query.toLowerCase().includes('5080') ||
+                                                  query.toLowerCase().includes('5090') ||
+                                                  query.toLowerCase().includes('4070') ||
+                                                  query.toLowerCase().includes('4080');
+                            
+                            // Only filter if price is suspiciously low for expensive items
+                            if (isExpensiveItem && priceValue < 200) {
+                                price = 'Check website';
+                                priceValue = null;
+                            } else if (!isExpensiveItem && priceValue < 1) {
+                                // For other items, only filter out prices under $1 (obviously wrong)
+                                price = 'Check website';
+                                priceValue = null;
+                            }
+                        }
+                        // Structured prices from Google are trusted - show them as-is
+                    } else if (!price) {
+                        // No price found at all
                         price = 'Check website';
                         priceValue = null;
                     }
