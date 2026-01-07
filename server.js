@@ -328,6 +328,9 @@ app.post('/api/create-checkout-session', async (req, res) => {
     try {
         const { userId } = req.body;
         
+        // Get base URL (works for both local and production)
+        const baseUrl = req.headers.origin || (req.headers.host ? `https://${req.headers.host}` : 'http://localhost:3000');
+        
         // Create Stripe Checkout Session
         const session = await stripeClient.checkout.sessions.create({
             payment_method_types: ['card'],
@@ -348,8 +351,8 @@ app.post('/api/create-checkout-session', async (req, res) => {
                 },
             ],
             mode: 'subscription',
-            success_url: `${req.headers.origin || 'http://localhost:3000'}?session_id={CHECKOUT_SESSION_ID}&success=true`,
-            cancel_url: `${req.headers.origin || 'http://localhost:3000'}?canceled=true`,
+            success_url: `${baseUrl}?session_id={CHECKOUT_SESSION_ID}&success=true`,
+            cancel_url: `${baseUrl}?canceled=true`,
             metadata: {
                 userId: userId || 'unknown',
             },

@@ -8,21 +8,18 @@ GitHub automatically blocks pushes that contain API keys or secrets. Always use 
 
 1. **Create a `.env` file** in the project root:
    ```env
-STRIPE_SECRET_KEY=sk_test_your_secret_key_here
-STRIPE_PUBLISHABLE_KEY=pk_test_your_publishable_key_here
-SERPAPI_KEY=your_serpapi_key_here
+   STRIPE_SECRET_KEY=sk_test_your_secret_key_here
+   STRIPE_PUBLISHABLE_KEY=pk_test_your_publishable_key_here
+   SERPAPI_KEY=your_serpapi_key_here
    PORT=3000
    ```
 
 2. **Install dotenv package** (if not already installed):
    ```bash
-   npm install dotenv
+   npm install
    ```
 
-3. **Update server.js** to load .env file (add at the top):
-   ```javascript
-   require('dotenv').config();
-   ```
+3. **The server.js already loads .env file** - no changes needed!
 
 ## Production Deployment (Render/Railway/etc.)
 
@@ -49,22 +46,17 @@ fly secrets set STRIPE_PUBLISHABLE_KEY=your_key_here
 fly secrets set SERPAPI_KEY=your_key_here
 ```
 
-## Your Current Keys
+## Getting Your API Keys
 
-**Stripe Secret Key:**
-```
-sk_test_your_secret_key_here
-```
-
-**Stripe Publishable Key:**
-```
-pk_test_your_publishable_key_here
-```
+**Stripe Keys:**
+- Go to: https://dashboard.stripe.com/apikeys
+- Copy your test keys (or live keys for production)
+- Test keys start with `sk_test_` and `pk_test_`
+- Live keys start with `sk_live_` and `pk_live_`
 
 **SerpAPI Key:**
-```
-your_serpapi_key_here
-```
+- Go to: https://serpapi.com/dashboard
+- Copy your API key
 
 ## Security Notes
 
@@ -72,3 +64,4 @@ your_serpapi_key_here
 - ✅ Never share your API keys publicly
 - ✅ Use different keys for production (live Stripe keys)
 - ✅ Rotate keys if they're ever exposed
+- ✅ Test keys are safe to use in development but should still be kept private
