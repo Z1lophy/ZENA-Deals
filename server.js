@@ -125,13 +125,74 @@ const retailers = [
 ];
 
 // Helper to search a specific retailer
+// Helper function to check if a URL is a product page (not a search/category page)
+function isProductPage(url, retailerSite) {
+    if (!url || !url.includes(retailerSite)) return false;
+    
+    const link = url.toLowerCase();
+    
+    // Define product page patterns for each retailer
+    const productPatterns = {
+        'amazon.com': ['/dp/', '/gp/product/', '/product/', '/d/', '/b/'],
+        'ebay.com': ['/itm/', '/p/', '/i/'],
+        'bestbuy.com': ['/site/', '/product/'],
+        'walmart.com': ['/ip/', '/product/'],
+        'target.com': ['/p/', '/product/'],
+        'newegg.com': ['/product/', '/p/']
+    };
+    
+    // Check for product page patterns
+    for (const [site, patterns] of Object.entries(productPatterns)) {
+        if (retailerSite.includes(site)) {
+            for (const pattern of patterns) {
+                if (link.includes(pattern)) {
+                    return true;
+                }
+            }
+        }
+    }
+    
+    // Filter out search pages, category pages, and other non-product pages
+    const isSearchPage = link.includes('/search') || 
+                        link.includes('/searchpage') ||
+                        link.includes('/browse') ||
+                        link.includes('/category') ||
+                        link.includes('/c/') ||
+                        link.includes('?st=') ||
+                        link.includes('&st=') ||
+                        link.includes('/s?') ||
+                        link.includes('/sch/') ||
+                        link.includes('/s/') ||
+                        (link.includes('search') && link.includes('q=')) ||
+                        link.includes('/b/') && !link.includes('/dp/'); // Amazon /b/ is browse, not product
+    
+    return !isSearchPage;
+}
+
 async function searchRetailer(retailer, query, apiKey) {
     try {
-        // Use Google Search with site-specific query to get direct retailer links
-        // Add "buy" or "product" to get product pages instead of search pages
-        const searchQuery = `${query} buy product site:${retailer.site}`;
-        const searchUrl = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(searchQuery)}&api_key=${apiKey}&num=10`;
-        const data = await makeRequest(searchUrl);
+        // Try Google Shopping first (better product data and images)
+        // Then fall back to regular Google Search if needed
+        let data = null;
+        
+        // First try: Google Shopping with site filter
+        const shoppingQuery = `${query} site:${retailer.site}`;
+        const shoppingUrl = `https://serpapi.com/search.json?engine=google_shopping&q=${encodeURIComponent(shoppingQuery)}&api_key=${apiKey}&num=10`;
+        
+        try {
+            data = await makeRequest(shoppingUrl);
+            // If shopping results are empty or error, fall back to regular search
+            if (data.error || !data.shopping_results || data.shopping_results.length === 0) {
+                throw new Error('No shopping results, trying regular search');
+            }
+            console.log(`  📦 Using Google Shopping for ${retailer.name}`);
+        } catch (shoppingError) {
+            // Fall back to regular Google Search
+            const searchQuery = `${query} site:${retailer.site}`;
+            const searchUrl = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(searchQuery)}&api_key=${apiKey}&num=15`;
+            data = await makeRequest(searchUrl);
+            console.log(`  🔍 Using Google Search for ${retailer.name}`);
+        }
         
         if (data.error) {
             console.log(`  ⚠️ ${retailer.name} error: ${data.error}`);
@@ -139,22 +200,49 @@ async function searchRetailer(retailer, query, apiKey) {
         }
         
         const results = [];
+        
+        // Handle Google Shopping results (better product data)
+        if (data.shopping_results && data.shopping_results.length > 0) {
+            for (const result of data.shopping_results) {
+                // Check if result is from the retailer's domain
+                const productLink = result.link || result.product_link || result.product_url;
+                if (productLink && productLink.includes(retailer.site)) {
+                    // Use improved product page detection
+                    if (!isProductPage(productLink, retailer.site)) {
+                        continue; // Skip non-product pages
+                    }
+                    
+                    // Google Shopping provides better structured data
+                    let price = result.price || result.extracted_price ? `$${result.extracted_price || result.price}` : 'Check website';
+                    let priceValue = result.extracted_price ? parseFloat(result.extracted_price) : null;
+                    
+                    // Get image from Google Shopping (usually better quality)
+                    let image = result.thumbnail || 
+                               result.image ||
+                               result.original_image ||
+                               '';
+                    
+                    results.push({
+                        title: result.title || 'Product',
+                        link: productLink, // Direct product link from Google Shopping
+                        snippet: result.snippet || '',
+                        source: retailer.name,
+                        price: price,
+                        thumbnail: image,
+                        image: image
+                    });
+                }
+            }
+        }
+        
+        // Also check organic_results (from regular Google Search or as fallback)
         if (data.organic_results) {
             for (const result of data.organic_results) {
                 // Only include results from the retailer's domain
                 if (result.link && result.link.includes(retailer.site)) {
-                    // Filter out search pages, category pages, and other non-product pages
-                    const link = result.link.toLowerCase();
-                    const isSearchPage = link.includes('/search') || 
-                                        link.includes('/searchpage') ||
-                                        link.includes('/browse') ||
-                                        link.includes('/category') ||
-                                        link.includes('/c/') ||
-                                        link.includes('?st=') ||
-                                        link.includes('&st=');
-                    
-                    if (isSearchPage) {
-                        continue; // Skip search pages
+                    // Use improved product page detection
+                    if (!isProductPage(result.link, retailer.site)) {
+                        continue; // Skip non-product pages
                     }
                     
                     // Try to extract price from multiple sources
@@ -224,10 +312,24 @@ async function searchRetailer(retailer, query, apiKey) {
                     }
                     
                     // Get image from multiple possible sources
+                    // SerpAPI Google Search results may have images in different fields
                     let image = result.thumbnail || 
                                result.image ||
                                result.rich_snippet?.top?.image ||
+                               result.rich_snippet?.top?.detected_extensions?.thumbnail ||
+                               result.pagemap?.cse_image?.[0]?.src ||
+                               result.pagemap?.cse_thumbnail?.[0]?.src ||
+                               result.pagemap?.metatags?.[0]?.['og:image'] ||
+                               result.pagemap?.metatags?.[0]?.['twitter:image'] ||
                                '';
+                    
+                    // If no image found, try to extract from snippet HTML if available
+                    if (!image && result.html_snippet) {
+                        const imgMatch = result.html_snippet.match(/<img[^>]+src=["']([^"']+)["']/i);
+                        if (imgMatch && imgMatch[1]) {
+                            image = imgMatch[1];
+                        }
+                    }
                     
                     results.push({
                         title: result.title || 'Product',
@@ -235,7 +337,8 @@ async function searchRetailer(retailer, query, apiKey) {
                         snippet: result.snippet || '',
                         source: retailer.name,
                         price: price || 'Check website',
-                        thumbnail: image
+                        thumbnail: image,
+                        image: image // Include both for compatibility
                     });
                 }
             }
@@ -283,23 +386,16 @@ app.get('/api/search', async (req, res) => {
         
         console.log(`✅ Found ${combinedResults.length} products across all retailers`);
         
-        // Filter out search pages and format response
+        // Filter out search pages and format response - use improved product page detection
         const validResults = combinedResults.filter(item => {
             if (!item.link) return false;
             
-            const link = item.link.toLowerCase();
-            // Filter out search pages, category pages, etc.
-            const isInvalidPage = link.includes('/search') ||
-                                 link.includes('/searchpage') ||
-                                 link.includes('/browse') ||
-                                 link.includes('/category') ||
-                                 link.includes('/c/') ||
-                                 link.includes('?st=') ||
-                                 link.includes('&st=') ||
-                                 link.includes('/s?') ||
-                                 link.includes('/sch/');
+            // Find which retailer this item belongs to
+            const retailer = retailers.find(r => item.link.includes(r.site));
+            if (!retailer) return false;
             
-            return !isInvalidPage;
+            // Use improved product page detection
+            return isProductPage(item.link, retailer.site);
         });
         
         console.log(`✅ Filtered to ${validResults.length} valid product pages (removed search pages)`);
