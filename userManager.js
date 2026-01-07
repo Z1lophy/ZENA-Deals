@@ -54,15 +54,26 @@ class UserManager {
     }
     
     getSearchLimit() {
+        // Developer mode: unlimited searches
+        if (this.userData.developerMode) {
+            return Infinity;
+        }
         return this.userData.subscription === 'premium' ? 20 : 2;
     }
     
     getRemainingSearches() {
         const limit = this.getSearchLimit();
+        if (limit === Infinity) {
+            return 'Unlimited';
+        }
         return Math.max(0, limit - this.userData.dailySearches);
     }
     
     canSearch() {
+        // Developer mode: always allow searches
+        if (this.userData.developerMode) {
+            return true;
+        }
         this.resetDailyCountIfNeeded();
         return this.userData.dailySearches < this.getSearchLimit();
     }
@@ -81,6 +92,11 @@ class UserManager {
     }
     
     isPremium() {
+        // Developer mode: always premium
+        if (this.userData.developerMode) {
+            return true;
+        }
+        
         if (this.userData.subscription !== 'premium') return false;
         
         // Check if subscription expired
@@ -95,6 +111,47 @@ class UserManager {
         }
         
         return true;
+    }
+    
+    // Developer/testing methods
+    enableDeveloperMode() {
+        this.userData.developerMode = true;
+        this.userData.subscription = 'premium';
+        this.userData.subscriptionExpiry = new Date('2099-12-31').toISOString();
+        this.userData.dailySearches = 0; // Reset count
+        this.saveUserData();
+        console.log('✅ Developer mode enabled! Unlimited searches and premium features activated.');
+        this.updateUI();
+    }
+    
+    disableDeveloperMode() {
+        this.userData.developerMode = false;
+        this.saveUserData();
+        console.log('❌ Developer mode disabled. Back to normal limits.');
+        this.updateUI();
+    }
+    
+    // Quick premium upgrade for testing (sets premium until 2099)
+    enablePremiumForTesting() {
+        this.userData.subscription = 'premium';
+        this.userData.subscriptionExpiry = new Date('2099-12-31').toISOString();
+        this.userData.dailySearches = 0; // Reset count
+        this.saveUserData();
+        console.log('✅ Premium enabled for testing! 20 searches/day until 2099.');
+        this.updateUI();
+    }
+    
+    updateUI() {
+        // Trigger UI update if the page is loaded
+        if (typeof updateSearchCount === 'function') {
+            updateSearchCount();
+        }
+        // Also try to update if script.js is loaded
+        setTimeout(() => {
+            if (typeof updateSearchCount === 'function') {
+                updateSearchCount();
+            }
+        }, 100);
     }
     
     getUserData() {
