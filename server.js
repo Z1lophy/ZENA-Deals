@@ -312,6 +312,7 @@ app.get('/api/search', async (req, res) => {
                 price: item.price,
                 source: item.source,
                 thumbnail: item.thumbnail || item.image || '',
+                image: item.thumbnail || item.image || '', // Include both for compatibility
                 snippet: item.snippet
             }))
         };
