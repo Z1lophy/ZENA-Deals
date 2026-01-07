@@ -69,11 +69,17 @@ async function handleSearch() {
     try {
         let productResults = [];
         
-        // ALWAYS use SerpAPI if configured (it provides prices)
-        // Google Custom Search doesn't provide prices, so we never use it when SerpAPI is available
-        if (API_CONFIG.useSerpAPI && API_CONFIG.serpApiKey && API_CONFIG.serpApiKey !== 'YOUR_SERPAPI_KEY') {
-            console.log('Using SerpAPI for product search with prices...');
-            productResults = await searchWithSerpAPI(query);
+        // ALWAYS try to use backend API first (API key is stored server-side in environment variables)
+        // The backend will handle the SerpAPI key from environment variables
+        if (API_CONFIG.useSerpAPI) {
+            console.log('Using backend API for product search...');
+            try {
+                productResults = await searchWithSerpAPI(query);
+            } catch (apiError) {
+                // If API fails (e.g., no API key configured on server), show helpful error
+                console.error('API Error:', apiError);
+                throw apiError; // Let the error handler show the message to user
+            }
         } else if (API_CONFIG.useGoogleSearch && API_CONFIG.googleApiKey && API_CONFIG.googleApiKey !== 'YOUR_GOOGLE_API_KEY' && API_CONFIG.googleSearchEngineId && API_CONFIG.googleSearchEngineId !== 'YOUR_SEARCH_ENGINE_ID') {
             // Only use Google if SerpAPI is NOT configured (Google doesn't provide prices)
             console.warn('⚠️ Using Google Custom Search - prices will show as "Check website". Configure SerpAPI for real prices!');
@@ -188,14 +194,10 @@ function parsePrice(priceString) {
 
 // SerpAPI integration - finds real products with actual prices
 async function searchWithSerpAPI(query) {
-    const apiKey = API_CONFIG.serpApiKey;
-    if (!apiKey || apiKey === 'YOUR_SERPAPI_KEY') {
-        throw new Error('Please configure your SerpAPI key in script.js. Get a free key at https://serpapi.com');
-    }
-    
     // Always use backend proxy (works on both localhost and production)
     // SerpAPI blocks direct browser requests due to CORS, so we need a proxy
-    // The backend server.js handles the API calls server-side
+    // The backend server.js handles the API calls server-side using environment variables
+    // The API key is stored in Render's environment variables, not in the frontend code
     const url = `/api/search?query=${encodeURIComponent(query)}`;
     
     let response;
@@ -215,12 +217,15 @@ async function searchWithSerpAPI(query) {
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         if (response.status === 401) {
-            throw new Error('Invalid SerpAPI key. Please check your API key in script.js');
+            throw new Error('Invalid SerpAPI key. Please check your API key in Render environment variables.');
         }
         if (response.status === 429) {
             throw new Error('API rate limit exceeded. You\'ve used all 100 free searches this month. Wait for next month or upgrade your plan.');
         }
-        throw new Error(`SerpAPI error: ${errorData.error || response.statusText || 'Unknown error'}`);
+        if (response.status === 500 && errorData.error && errorData.error.includes('SERPAPI_KEY')) {
+            throw new Error('SerpAPI key not configured. Please add SERPAPI_KEY to your Render environment variables. See ENV_SETUP.md for instructions.');
+        }
+        throw new Error(`API error: ${errorData.error || response.statusText || 'Unknown error'}`);
     }
     
     const data = await response.json();
