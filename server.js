@@ -173,25 +173,21 @@ async function searchRetailer(retailer, query, apiKey) {
     try {
         const results = [];
         
-        // Strategy: Use Google Shopping API (no site filter - it doesn't work well)
-        // Then filter results by retailer domain and extract direct product links
-        const shoppingQuery = query; // Don't use site: filter with Google Shopping
-        const shoppingUrl = `https://serpapi.com/search.json?engine=google_shopping&q=${encodeURIComponent(shoppingQuery)}&api_key=${apiKey}&num=20`;
+        // Strategy: Use regular Google Search with site: filter for direct retailer links
+        // Google Shopping doesn't work well with site: filters, so use regular search
+        const searchQuery = `${query} site:${retailer.site}`;
+        const searchUrl = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(searchQuery)}&api_key=${apiKey}&num=15`;
         
         let data = null;
         try {
-            data = await makeRequest(shoppingUrl);
+            data = await makeRequest(searchUrl);
             if (data.error) {
                 throw new Error(data.error);
             }
-            console.log(`  📦 Using Google Shopping for ${retailer.name}`);
-        } catch (shoppingError) {
-            console.log(`  ⚠️ Google Shopping failed for ${retailer.name}, trying regular search`);
-            // Fall back to regular Google Search with site filter
-            const searchQuery = `${query} site:${retailer.site}`;
-            const searchUrl = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(searchQuery)}&api_key=${apiKey}&num=15`;
-            data = await makeRequest(searchUrl);
             console.log(`  🔍 Using Google Search for ${retailer.name}`);
+        } catch (searchError) {
+            console.log(`  ⚠️ Google Search failed for ${retailer.name}: ${searchError.message}`);
+            return [];
         }
         
         if (data.error) {
@@ -199,17 +195,13 @@ async function searchRetailer(retailer, query, apiKey) {
             return [];
         }
         
-        // Handle Google Shopping results (better product data and images)
-        if (data.shopping_results && data.shopping_results.length > 0) {
-            for (const result of data.shopping_results) {
-                // Google Shopping provides direct product links in product_link field
-                // This is the ACTUAL retailer product page URL, not a Google redirect
-                const directProductLink = result.product_link || result.link;
-                
-                // Check if this result is from the retailer we're looking for
-                if (directProductLink && directProductLink.includes(retailer.site)) {
-                    // Verify it's a product page (not a search page)
-                    if (!isProductPage(directProductLink, retailer.site)) {
+        // Handle organic_results from Google Search
+        if (data.organic_results && data.organic_results.length > 0) {
+            for (const result of data.organic_results) {
+                // Only include results from the retailer's domain
+                if (result.link && result.link.includes(retailer.site)) {
+                    // Use improved product page detection
+                    if (!isProductPage(result.link, retailer.site)) {
                         continue; // Skip non-product pages
                     }
                     
