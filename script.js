@@ -193,20 +193,10 @@ async function searchWithSerpAPI(query) {
         throw new Error('Please configure your SerpAPI key in script.js. Get a free key at https://serpapi.com');
     }
     
-    // Try to use backend proxy first (if server.js is running on port 3000)
+    // Always use backend proxy (works on both localhost and production)
     // SerpAPI blocks direct browser requests due to CORS, so we need a proxy
-    const isLocalServer = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    const isPort3000 = window.location.port === '3000';
-    const useProxy = isLocalServer && isPort3000;
-    
-    let url;
-    if (useProxy) {
-        // Use the Node.js backend proxy
-        url = `/api/search?query=${encodeURIComponent(query)}`;
-    } else {
-        // Try direct call (will likely fail due to CORS, but we'll show a helpful error)
-        url = `https://serpapi.com/search.json?engine=google_shopping&q=${encodeURIComponent(query)}&api_key=${apiKey}&num=20`;
-    }
+    // The backend server.js handles the API calls server-side
+    const url = `/api/search?query=${encodeURIComponent(query)}`;
     
     let response;
     try {
