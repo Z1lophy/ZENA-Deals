@@ -224,13 +224,15 @@ async function searchRetailer(retailer, query, apiKey, shoppingMap = null) {
                         priceValue = parseFloat(price.replace(/[^0-9.]/g, ''));
                     }
                     
-                    // Priority 2: Try to extract from snippet (but validate it's reasonable)
+                    // Priority 2: Try to extract from snippet - catch ALL prices (not just 3+ digits)
                     if (!price && result.snippet) {
-                        // Look for price patterns like $999.99, $1,299.99, etc.
+                        // Look for price patterns - catch any price from $0.01 to $999,999
                         const pricePatterns = [
-                            /\$[\d,]{3,}\.?\d{0,2}/,  // $999 or $999.99 (at least 3 digits)
-                            /[\d,]{3,}\.?\d{0,2}\s*USD/i,
-                            /Price[:\s]*\$?[\d,]{3,}\.?\d{0,2}/i
+                            /\$[\d,]+\.?\d{0,2}/,  // Any price like $20, $99.99, $1,299.99
+                            /[\d,]+\.?\d{0,2}\s*USD/i,
+                            /Price[:\s]*\$?[\d,]+\.?\d{0,2}/i,
+                            /\$\d+\.\d{2}/,  // Explicit $XX.XX format
+                            /\$\d+/  // Simple $XX format
                         ];
                         
                         for (const pattern of pricePatterns) {
@@ -239,14 +241,21 @@ async function searchRetailer(retailer, query, apiKey, shoppingMap = null) {
                                 const extractedPrice = match[0].replace(/[^0-9.,]/g, '');
                                 const numValue = parseFloat(extractedPrice.replace(/,/g, ''));
                                 
-                                // Validate: price should be reasonable (between $1 and $100,000)
-                                // Filter out obviously wrong prices like $83 for a $999 product
-                                if (numValue && numValue >= 1 && numValue <= 100000) {
+                                // Accept any reasonable price (between $0.01 and $1,000,000)
+                                if (numValue && numValue >= 0.01 && numValue <= 1000000) {
                                     price = `$${numValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                                     priceValue = numValue;
                                     break;
                                 }
                             }
+                        }
+                    }
+                    
+                    // Priority 3: Check if this link has a price in shopping results
+                    if (!price && shoppingMap && shoppingMap.has(result.link)) {
+                        const shoppingItem = shoppingMap.get(result.link);
+                        if (shoppingItem.price && shoppingItem.price !== 'Check website') {
+                            price = shoppingItem.price;
                         }
                     }
                     
@@ -350,10 +359,25 @@ app.get('/api/search', async (req, res) => {
                 // Find which retailer this belongs to
                 const retailer = retailers.find(r => productLink.includes(r.site));
                 if (retailer && isProductPage(productLink, retailer.site)) {
+                    // Extract price from multiple possible fields in Google Shopping
+                    let shoppingPrice = 'Check website';
+                    if (shoppingResult.extracted_price) {
+                        shoppingPrice = `$${shoppingResult.extracted_price}`;
+                    } else if (shoppingResult.price) {
+                        // shoppingResult.price might be a string like "$99.99" or number
+                        if (typeof shoppingResult.price === 'string') {
+                            shoppingPrice = shoppingResult.price;
+                        } else if (typeof shoppingResult.price === 'number') {
+                            shoppingPrice = `$${shoppingResult.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                        }
+                    } else if (shoppingResult.price_without_currency) {
+                        shoppingPrice = `$${shoppingResult.price_without_currency}`;
+                    }
+                    
                     shoppingMap.set(productLink, {
                         title: shoppingResult.title,
                         link: productLink,
-                        price: shoppingResult.extracted_price ? `$${shoppingResult.extracted_price}` : (shoppingResult.price || 'Check website'),
+                        price: shoppingPrice,
                         source: retailer.name,
                         image: shoppingResult.thumbnail || shoppingResult.image || shoppingResult.original_image || '',
                         snippet: shoppingResult.snippet || ''
