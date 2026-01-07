@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZENA Deals - Find the Best Prices Online</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Stripe.js -->
+    <script src="https://js.stripe.com/v3/"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-top">
+                <div class="user-info">
+                    <span id="searchCount" class="search-count">Searches: 0/2</span>
+                    <button id="upgradeBtn" class="upgrade-btn">Upgrade to Premium</button>
+                </div>
+            </div>
+            <h1 class="logo">💰 ZENA Deals</h1>
+            <p class="tagline">Find the best prices from trusted retailers</p>
+        </header>
+
+        <main>
+            <div class="search-section">
+                <div class="search-container">
+                    <input 
+                        type="text" 
+                        id="searchInput" 
+                        class="search-input" 
+                        placeholder="Search for any product (e.g., iPhone 15, laptop, headphones...)"
+                        autocomplete="off"
+                    >
+                    <button id="searchBtn" class="search-button">
+                        <span class="search-icon">🔍</span>
+                        Search
+                    </button>
+                </div>
+            </div>
+
+            <div id="loading" class="loading hidden">
+                <div class="spinner"></div>
+                <p>Searching for the best deals...</p>
+            </div>
+
+            <div id="error" class="error hidden"></div>
+
+            <div id="apiNotice" class="api-notice hidden">
+                <p>⚠️ <strong>Demo Mode:</strong> To get real product prices and images, configure SerpAPI in script.js. <a href="#setup">See setup instructions</a></p>
+            </div>
+
+            <div id="results" class="results hidden">
+                <h2 class="results-title">ZENA Deals Found</h2>
+                <div id="resultsGrid" class="results-grid"></div>
+            </div>
+
+            <div id="noResults" class="no-results hidden">
+                <p>No deals found. Try searching for a different product.</p>
+            </div>
+        </main>
+
+        <footer>
+            <p>Powered by product search APIs | Always compare prices before buying</p>
+            <p style="font-size: 0.8rem; margin-top: 10px; opacity: 0.8;">
+                Note: If you see CORS errors, make sure you're running this from a web server (not file://). 
+                Use a local server or deploy to GitHub Pages/Netlify for best results.
+            </p>
+        </footer>
+    </div>
+
+    <!-- Subscription Modal -->
+    <div id="subscriptionModal" class="subscription-modal hidden">
+        <div class="subscription-content">
+            <button class="close-modal" id="closeSubscriptionModal">&times;</button>
+            <h2>🚀 Upgrade to Premium</h2>
+            <div class="pricing-plans">
+                <div class="plan free-plan">
+                    <h3>Free</h3>
+                    <div class="price">$0<span>/month</span></div>
+                    <ul>
+                        <li>✅ 2 searches per day</li>
+                        <li>✅ Basic features</li>
+                        <li>❌ Ads before product links</li>
+                    </ul>
+                </div>
+                <div class="plan premium-plan featured">
+                    <div class="badge">Popular</div>
+                    <h3>Premium</h3>
+                    <div class="price">$9.99<span>/month</span></div>
+                    <ul>
+                        <li>✅ 20 searches per day</li>
+                        <li>✅ All features</li>
+                        <li>✅ No ads</li>
+                        <li>✅ Priority support</li>
+                    </ul>
+                    <button id="subscribeBtn" class="subscribe-button">Subscribe Now</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="userManager.js"></script>
+    <script src="adManager.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>

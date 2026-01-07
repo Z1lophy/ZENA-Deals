@@ -1,0 +1,23 @@
+{
+  "name": "zena-deals-website",
+  "version": "1.0.0",
+  "description": "Product price comparison website",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "puppeteer": "^21.6.0",
+    "stripe": "^14.0.0"
+  },
+  "keywords": [
+    "price",
+    "comparison",
+    "deals"
+  ],
+  "author": "",
+  "license": "MIT"
+}
