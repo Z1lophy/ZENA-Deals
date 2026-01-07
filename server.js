@@ -174,11 +174,13 @@ async function searchRetailer(retailer, query, apiKey) {
         const results = [];
         
         // Strategy: Use regular Google Search with site: filter for direct retailer links
-        // Google Shopping doesn't work well with site: filters, so use regular search
+        // Then use Google Shopping to get product images (better image quality)
         const searchQuery = `${query} site:${retailer.site}`;
         const searchUrl = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(searchQuery)}&api_key=${apiKey}&num=15`;
         
         let data = null;
+        let shoppingData = null;
+        
         try {
             data = await makeRequest(searchUrl);
             if (data.error) {
@@ -190,9 +192,38 @@ async function searchRetailer(retailer, query, apiKey) {
             return [];
         }
         
+        // Also fetch Google Shopping results for better images
+        try {
+            const shoppingQuery = query; // No site filter for shopping
+            const shoppingUrl = `https://serpapi.com/search.json?engine=google_shopping&q=${encodeURIComponent(shoppingQuery)}&api_key=${apiKey}&num=20`;
+            shoppingData = await makeRequest(shoppingUrl);
+            if (!shoppingData.error && shoppingData.shopping_results) {
+                console.log(`  📦 Got ${shoppingData.shopping_results.length} shopping results for images`);
+            }
+        } catch (shoppingError) {
+            // Shopping API failed, continue without it
+            console.log(`  ⚠️ Google Shopping failed for images: ${shoppingError.message}`);
+        }
+        
         if (data.error) {
             console.log(`  ⚠️ ${retailer.name} error: ${data.error}`);
             return [];
+        }
+        
+        // Create a map of shopping results by title for image matching
+        const imageMap = new Map();
+        if (shoppingData && shoppingData.shopping_results) {
+            for (const shoppingResult of shoppingData.shopping_results) {
+                const shoppingLink = shoppingResult.product_link || shoppingResult.link || '';
+                // Match by retailer domain
+                if (shoppingLink.includes(retailer.site)) {
+                    const title = (shoppingResult.title || '').toLowerCase();
+                    const image = shoppingResult.thumbnail || shoppingResult.image || shoppingResult.original_image || '';
+                    if (title && image) {
+                        imageMap.set(title, image);
+                    }
+                }
+            }
         }
         
         // Handle organic_results from Google Search
@@ -272,8 +303,30 @@ async function searchRetailer(retailer, query, apiKey) {
                     }
                     
                     // Get image from multiple possible sources
-                    // SerpAPI Google Search results may have images in different fields
-                    let image = result.thumbnail || 
+                    // Priority 1: Try to match with Google Shopping results (better quality)
+                    let image = '';
+                    const resultTitle = (result.title || '').toLowerCase();
+                    
+                    // Try exact title match first
+                    if (imageMap.has(resultTitle)) {
+                        image = imageMap.get(resultTitle);
+                    } else {
+                        // Try partial match (in case titles differ slightly)
+                        for (const [shoppingTitle, shoppingImage] of imageMap.entries()) {
+                            // Check if titles are similar (contain common words)
+                            const resultWords = resultTitle.split(/\s+/).filter(w => w.length > 3);
+                            const shoppingWords = shoppingTitle.split(/\s+/).filter(w => w.length > 3);
+                            const commonWords = resultWords.filter(w => shoppingWords.includes(w));
+                            if (commonWords.length >= 2) {
+                                image = shoppingImage;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Priority 2: Get image from Google Search results
+                    if (!image) {
+                        image = result.thumbnail || 
                                result.image ||
                                result.rich_snippet?.top?.image ||
                                result.rich_snippet?.top?.detected_extensions?.thumbnail ||
@@ -282,8 +335,9 @@ async function searchRetailer(retailer, query, apiKey) {
                                result.pagemap?.metatags?.[0]?.['og:image'] ||
                                result.pagemap?.metatags?.[0]?.['twitter:image'] ||
                                '';
+                    }
                     
-                    // If no image found, try to extract from snippet HTML if available
+                    // Priority 3: Try to extract from snippet HTML if available
                     if (!image && result.html_snippet) {
                         const imgMatch = result.html_snippet.match(/<img[^>]+src=["']([^"']+)["']/i);
                         if (imgMatch && imgMatch[1]) {
