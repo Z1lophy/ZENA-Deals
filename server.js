@@ -440,16 +440,29 @@ app.get('/api/search', async (req, res) => {
         console.log(`✅ Filtered to ${validResults.length} valid product pages`);
         
         // Format response to match expected structure
+        // Log prices for debugging
+        const withPrices = validResults.filter(r => r.price && r.price !== 'Check website').length;
+        const withoutPrices = validResults.filter(r => !r.price || r.price === 'Check website').length;
+        console.log(`💰 Price summary: ${withPrices} with prices, ${withoutPrices} without prices`);
+        
         const response = {
-            shopping_results: validResults.map(item => ({
-                title: item.title,
-                link: item.link, // Direct retailer product link!
-                price: item.price,
-                source: item.source,
-                thumbnail: item.image || item.thumbnail || '',
-                image: item.image || item.thumbnail || '', // Include both for compatibility
-                snippet: item.snippet || ''
-            }))
+            shopping_results: validResults.map(item => {
+                // Ensure price is set - if missing, try to get from shopping map
+                let finalPrice = item.price;
+                if ((!finalPrice || finalPrice === 'Check website') && shoppingMap.has(item.link)) {
+                    finalPrice = shoppingMap.get(item.link).price;
+                }
+                
+                return {
+                    title: item.title,
+                    link: item.link, // Direct retailer product link!
+                    price: finalPrice || 'Check website',
+                    source: item.source,
+                    thumbnail: item.image || item.thumbnail || '',
+                    image: item.image || item.thumbnail || '', // Include both for compatibility
+                    snippet: item.snippet || ''
+                };
+            })
         };
         
         res.json(response);
