@@ -169,17 +169,16 @@ function isProductPage(url, retailerSite) {
     return !isSearchPage;
 }
 
-async function searchRetailer(retailer, query, apiKey) {
+async function searchRetailer(retailer, query, apiKey, shoppingMap = null) {
     try {
         const results = [];
         
         // Strategy: Use regular Google Search with site: filter for direct retailer links
-        // Then use Google Shopping to get product images (better image quality)
+        // Use shoppingMap (passed from main endpoint) to get images for matching products
         const searchQuery = `${query} site:${retailer.site}`;
         const searchUrl = `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(searchQuery)}&api_key=${apiKey}&num=15`;
         
         let data = null;
-        let shoppingData = null;
         
         try {
             data = await makeRequest(searchUrl);
@@ -192,38 +191,9 @@ async function searchRetailer(retailer, query, apiKey) {
             return [];
         }
         
-        // Also fetch Google Shopping results for better images
-        try {
-            const shoppingQuery = query; // No site filter for shopping
-            const shoppingUrl = `https://serpapi.com/search.json?engine=google_shopping&q=${encodeURIComponent(shoppingQuery)}&api_key=${apiKey}&num=20`;
-            shoppingData = await makeRequest(shoppingUrl);
-            if (!shoppingData.error && shoppingData.shopping_results) {
-                console.log(`  📦 Got ${shoppingData.shopping_results.length} shopping results for images`);
-            }
-        } catch (shoppingError) {
-            // Shopping API failed, continue without it
-            console.log(`  ⚠️ Google Shopping failed for images: ${shoppingError.message}`);
-        }
-        
         if (data.error) {
             console.log(`  ⚠️ ${retailer.name} error: ${data.error}`);
             return [];
-        }
-        
-        // Create a map of shopping results by title for image matching
-        const imageMap = new Map();
-        if (shoppingData && shoppingData.shopping_results) {
-            for (const shoppingResult of shoppingData.shopping_results) {
-                const shoppingLink = shoppingResult.product_link || shoppingResult.link || '';
-                // Match by retailer domain
-                if (shoppingLink.includes(retailer.site)) {
-                    const title = (shoppingResult.title || '').toLowerCase();
-                    const image = shoppingResult.thumbnail || shoppingResult.image || shoppingResult.original_image || '';
-                    if (title && image) {
-                        imageMap.set(title, image);
-                    }
-                }
-            }
         }
         
         // Handle organic_results from Google Search
@@ -302,26 +272,12 @@ async function searchRetailer(retailer, query, apiKey) {
                         priceValue = null;
                     }
                     
-                    // Get image from multiple possible sources
-                    // Priority 1: Try to match with Google Shopping results (better quality)
+                    // Get image - first try shopping map (by link), then Google Search results
                     let image = '';
-                    const resultTitle = (result.title || '').toLowerCase();
                     
-                    // Try exact title match first
-                    if (imageMap.has(resultTitle)) {
-                        image = imageMap.get(resultTitle);
-                    } else {
-                        // Try partial match (in case titles differ slightly)
-                        for (const [shoppingTitle, shoppingImage] of imageMap.entries()) {
-                            // Check if titles are similar (contain common words)
-                            const resultWords = resultTitle.split(/\s+/).filter(w => w.length > 3);
-                            const shoppingWords = shoppingTitle.split(/\s+/).filter(w => w.length > 3);
-                            const commonWords = resultWords.filter(w => shoppingWords.includes(w));
-                            if (commonWords.length >= 2) {
-                                image = shoppingImage;
-                                break;
-                            }
-                        }
+                    // Priority 1: Check if this link exists in shopping results (best images)
+                    if (shoppingMap && shoppingMap.has(result.link)) {
+                        image = shoppingMap.get(result.link).image || '';
                     }
                     
                     // Priority 2: Get image from Google Search results
@@ -384,35 +340,81 @@ app.get('/api/search', async (req, res) => {
         return res.status(500).json({ error: 'SERPAPI_KEY environment variable is required. See ENV_SETUP.md for setup instructions.' });
     }
     
-    console.log('🛒 Searching retailers directly (no Google Shopping)...');
+    console.log('🛒 Searching retailers with Google Shopping (for images) and Google Search (for direct links)...');
     console.log('📦 Searching:', retailers.map(r => r.name).join(', '));
     
     try {
-        // Search all retailers in parallel
+        // First, get Google Shopping results (has images and product links)
+        let shoppingResults = [];
+        try {
+            const shoppingUrl = `https://serpapi.com/search.json?engine=google_shopping&q=${encodeURIComponent(query)}&api_key=${SERPAPI_KEY}&num=50`;
+            const shoppingData = await makeRequest(shoppingUrl);
+            if (!shoppingData.error && shoppingData.shopping_results) {
+                console.log(`📦 Got ${shoppingData.shopping_results.length} Google Shopping results`);
+                shoppingResults = shoppingData.shopping_results;
+            }
+        } catch (shoppingError) {
+            console.log(`⚠️ Google Shopping failed: ${shoppingError.message}`);
+        }
+        
+        // Create a map of shopping results by product link for quick lookup
+        const shoppingMap = new Map();
+        for (const shoppingResult of shoppingResults) {
+            const productLink = shoppingResult.product_link || shoppingResult.link || '';
+            if (productLink) {
+                // Find which retailer this belongs to
+                const retailer = retailers.find(r => productLink.includes(r.site));
+                if (retailer && isProductPage(productLink, retailer.site)) {
+                    shoppingMap.set(productLink, {
+                        title: shoppingResult.title,
+                        link: productLink,
+                        price: shoppingResult.extracted_price ? `$${shoppingResult.extracted_price}` : (shoppingResult.price || 'Check website'),
+                        source: retailer.name,
+                        image: shoppingResult.thumbnail || shoppingResult.image || shoppingResult.original_image || '',
+                        snippet: shoppingResult.snippet || ''
+                    });
+                }
+            }
+        }
+        
+        // Also search each retailer with Google Search for direct links (fallback)
         const searchPromises = retailers.map(retailer => 
-            searchRetailer(retailer, query, SERPAPI_KEY)
+            searchRetailer(retailer, query, SERPAPI_KEY, shoppingMap)
         );
         
-        const allResults = await Promise.all(searchPromises);
+        const allSearchResults = await Promise.all(searchPromises);
+        const combinedSearchResults = allSearchResults.flat();
         
-        // Flatten and combine all results
-        const combinedResults = allResults.flat();
+        // Combine shopping results with search results
+        // Prefer shopping results (have images), but add search results that aren't in shopping
+        const allResults = [];
+        const usedLinks = new Set();
         
-        console.log(`✅ Found ${combinedResults.length} products across all retailers`);
+        // Add shopping results first (they have images)
+        for (const [link, item] of shoppingMap.entries()) {
+            allResults.push(item);
+            usedLinks.add(link);
+        }
         
-        // Filter out search pages and format response - use improved product page detection
-        const validResults = combinedResults.filter(item => {
+        // Add search results that aren't already in shopping results
+        for (const item of combinedSearchResults) {
+            if (!usedLinks.has(item.link)) {
+                allResults.push(item);
+                usedLinks.add(item.link);
+            }
+        }
+        
+        console.log(`✅ Found ${allResults.length} products total (${shoppingMap.size} from Shopping, ${combinedSearchResults.length} from Search)`);
+        
+        // Filter out search pages and format response
+        const validResults = allResults.filter(item => {
             if (!item.link) return false;
-            
-            // Find which retailer this item belongs to
             const retailer = retailers.find(r => item.link.includes(r.site));
             if (!retailer) return false;
-            
-            // Use improved product page detection
             return isProductPage(item.link, retailer.site);
         });
         
-        console.log(`✅ Filtered to ${validResults.length} valid product pages (removed search pages)`);
+        console.log(`✅ Filtered to ${validResults.length} valid product pages`);
         
         // Format response to match expected structure
         const response = {
@@ -421,9 +423,9 @@ app.get('/api/search', async (req, res) => {
                 link: item.link, // Direct retailer product link!
                 price: item.price,
                 source: item.source,
-                thumbnail: item.thumbnail || item.image || '',
-                image: item.thumbnail || item.image || '', // Include both for compatibility
-                snippet: item.snippet
+                thumbnail: item.image || item.thumbnail || '',
+                image: item.image || item.thumbnail || '', // Include both for compatibility
+                snippet: item.snippet || ''
             }))
         };
         
