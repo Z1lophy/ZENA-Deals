@@ -395,21 +395,35 @@ app.get('/api/search', async (req, res) => {
         const combinedSearchResults = allSearchResults.flat();
         
         // Combine shopping results with search results
-        // Prefer shopping results (have images), but add search results that aren't in shopping
+        // Prefer shopping results (have images AND prices), but add search results that aren't in shopping
         const allResults = [];
         const usedLinks = new Set();
         
-        // Add shopping results first (they have images)
+        // Add shopping results first (they have images and prices)
         for (const [link, item] of shoppingMap.entries()) {
             allResults.push(item);
             usedLinks.add(link);
         }
         
         // Add search results that aren't already in shopping results
+        // But if a search result matches a shopping result by link, use shopping result (has price)
         for (const item of combinedSearchResults) {
             if (!usedLinks.has(item.link)) {
-                allResults.push(item);
-                usedLinks.add(item.link);
+                // Check if shopping map has this link (might be slightly different URL)
+                let foundInShopping = false;
+                for (const [shoppingLink, shoppingItem] of shoppingMap.entries()) {
+                    // Check if links are similar (same domain and product)
+                    if (item.link.includes(retailers.find(r => item.link.includes(r.site))?.site || '') &&
+                        shoppingLink.includes(retailers.find(r => shoppingLink.includes(r.site))?.site || '')) {
+                        // Use shopping result instead (has price and image)
+                        foundInShopping = true;
+                        break;
+                    }
+                }
+                if (!foundInShopping) {
+                    allResults.push(item);
+                    usedLinks.add(item.link);
+                }
             }
         }
         
