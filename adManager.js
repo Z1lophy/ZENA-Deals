@@ -80,24 +80,47 @@ class AdManager {
     }
     
     loadAd() {
-        // TODO: Integrate with ad network (Google AdSense, etc.)
-        // For now, showing placeholder
         const adContent = document.getElementById('adContent');
-        
-        // Example: You can add Google AdSense here
-        // Or use a video ad player
-        // Or use an ad network API
-        
-        // Placeholder ad content
+
+        // Configure these if you want to render an AdSense unit inside the modal.
+        // You already provided the client ID; if you add a display ad unit in AdSense,
+        // set ADSENSE_SLOT to that unit's slot id (a numeric string). If not set,
+        // we fall back to the placeholder. Auto Ads will still run across the site.
+        const ADSENSE_CLIENT = 'ca-pub-8020092100458410';
+        const ADSENSE_SLOT = ''; // e.g. '1234567890' (leave empty to use placeholder)
+
+        // Try to render an AdSense unit inside the modal when a slot is provided
+        try {
+            if (window.adsbygoogle && ADSENSE_SLOT) {
+                adContent.innerHTML = '';
+
+                const ins = document.createElement('ins');
+                ins.className = 'adsbygoogle';
+                ins.style.display = 'block';
+                ins.setAttribute('data-ad-client', ADSENSE_CLIENT);
+                ins.setAttribute('data-ad-slot', ADSENSE_SLOT);
+                ins.setAttribute('data-ad-format', 'auto');
+                ins.setAttribute('data-full-width-responsive', 'true');
+                adContent.appendChild(ins);
+
+                // Request fill
+                (window.adsbygoogle = window.adsbygoogle || []).push({});
+                return;
+            }
+        } catch (e) {
+            // Silently fall back to placeholder
+        }
+
+        // Fallback placeholder content (shows if no slot is configured yet)
         adContent.innerHTML = `
             <div class="ad-placeholder">
                 <div class="ad-banner">
                     <p>🎯 Premium Ad Space</p>
                     <p style="font-size: 0.8rem; margin-top: 10px; color: #666;">
-                        This space is available for advertising partnerships
+                        This space will show an ad once an AdSense slot is configured
                     </p>
                     <p style="font-size: 0.7rem; margin-top: 5px; color: #999;">
-                        Contact us for ad placement opportunities
+                        Configure ADSENSE_SLOT in adManager.js
                     </p>
                 </div>
             </div>
